@@ -1,0 +1,14 @@
+package com.notification.Service.Event;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@AllArgsConstructor
+@NoArgsConstructor
+public class OrderCancelledEvent {
+    private Long orderId;
+    private Long userId;
+    private String product;
+}
