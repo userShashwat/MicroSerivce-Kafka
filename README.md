@@ -1,192 +1,257 @@
-# Distributed Notification Service
+# 🚀 Distributed Notification Service
 
-A production-grade, event-driven notification system built with Spring Boot microservices and Apache Kafka. Three independent services communicate asynchronously via Kafka topics — User Service and Order Service publish events, Notification Service consumes them and dispatches real emails via JavaMail with Freemarker templates.
+A production-grade, **event-driven notification system** built with **Spring Boot Microservices** and **Apache Kafka**. Three independent services communicate asynchronously via Kafka topics — User Service and Order Service publish events, Notification Service consumes them and dispatches real emails via JavaMail with Freemarker templates.
 
----
-
-## Architecture
-
-```
-┌─────────────────┐        ┌─────────────────┐
-│  User Service    │        │  Order Service   │
-│  Port: 8081       │        │  Port: 8082       │
-│                   │        │                   │
-│  • Register       │        │  • Place Order     │
-│  • Login (JWT)     │        │  • Cancel Order     │
-│  • Preferences     │        │  • Get Orders       │
-└────────┬──────────┘        └────────┬──────────┘
-         │                            │
-         │ users.events               │ order.placed
-         │                            │ order.cancelled
-         ▼                            ▼
-┌─────────────────────────────────────────────┐
-│              Apache Kafka (KRaft)             │
-│                                                │
-│  Topics:                                      │
-│   • users.events      (UserRegisteredEvent)   │
-│   • order.placed      (OrderPlacedEvent)      │
-│   • order.cancelled   (OrderCancelledEvent)   │
-└─────────────────────┬─────────────────────────┘
-                       │
-                       ▼
-          ┌────────────────────────┐
-          │  Notification Service    │
-          │  Port: 8083                │
-          │                            │
-          │  • Kafka Consumers          │
-          │  • Event Router             │
-          │  • JavaMail + Freemarker     │
-          │  • Resilience4j Retry        │
-          │  • Circuit Breaker            │
-          │  • Dead Letter Queue           │
-          │  • Spring Actuator               │
-          │  • Notification History           │
-          └──────────┬──────────────────────┘
-                      │
-           ┌──────────┴──────────┐
-           │                     │
-           ▼                     ▼
-     ┌──────────┐         ┌──────────────┐
-     │  MySQL     │         │  Mailtrap      │
-     │            │         │  SMTP           │
-     │ user_db     │         │ (sandbox)        │
-     │ order_db     │         └──────────────┘
-     │ notif_db      │
-     └──────────┘
-```
+The system is built using an **event-driven architecture** powered by **Apache Kafka**, with **Resilience4j**, **MySQL**, **JavaMail**, and **Docker**.
 
 ---
 
-## Services
+## ✨ Key Features
 
-### User Service (Port 8081)
-
-Handles user registration and authentication. Publishes a `UserRegisteredEvent` to Kafka on every successful registration.
-
-| Endpoint | Method | Description | Auth |
-|---|---|---|---|
-| `/api/auth/register` | POST | Register new user | Public |
-| `/api/auth/login` | POST | Login and get JWT token | Public |
-
-### Order Service (Port 8082)
-
-Manages orders. Publishes `OrderPlacedEvent` and `OrderCancelledEvent` to separate Kafka topics.
-
-| Endpoint | Method | Description | Auth |
-|---|---|---|---|
-| `/api/orders` | POST | Place a new order | Public |
-| `/api/orders/{id}/cancel` | PATCH | Cancel an order | Public |
-| `/api/orders/user/{userId}` | GET | Get orders by user | Public |
-
-### Notification Service (Port 8083)
-
-The core service. Consumes Kafka events, dispatches emails, and persists notification history.
-
-| Endpoint | Method | Description |
-|---|---|---|
-| `/api/notifications/user/{userId}` | GET | Get notification history |
-| `/api/notifications/user/{userId}/unread-count` | GET | Get unread count |
-| `/actuator/health` | GET | Health check (DB, Mail, Kafka) |
-| `/actuator/metrics` | GET | Service metrics |
+- 🔐 JWT Authentication & Login (User Service)
+- 👤 User Registration with Event Publishing
+- 🛒 Order Placement & Cancellation
+- ⚡ Apache Kafka Event Processing (KRaft mode, no Zookeeper)
+- 📧 Real Email Dispatch via JavaMail + Freemarker Templates
+- 🔄 Resilience4j Retry with Exponential Backoff
+- 🛡️ Circuit Breaker Protection
+- 💀 Dead Letter Queue (DLQ) for Failed Notifications
+- 📊 Notification History & Status Tracking
+- 🩺 Spring Actuator Health Checks
+- 🐳 Docker & Docker Compose
+- 🔧 CI/CD via GitHub Actions → AWS EC2
 
 ---
 
-## Kafka Topics
+# 🛠 Tech Stack
 
-| Topic | Producer | Event | Consumer |
-|---|---|---|---|
-| `users.events` | User Service | `UserRegisteredEvent` | Notification Service |
-| `order.placed` | Order Service | `OrderPlacedEvent` | Notification Service |
-| `order.cancelled` | Order Service | `OrderCancelledEvent` | Notification Service |
-
-> **Why separate topics for order events?** Using a single `order.events` topic with multiple consumer groups caused both consumer groups to receive every message — `OrderPlacedEvent` was being deserialized as `OrderCancelledEvent` by the wrong consumer. Separate topics eliminate this entirely.
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
+| Category | Technology |
+|----------|------------|
 | Language | Java 21 |
 | Framework | Spring Boot 3.4.5 |
-| Security | Spring Security, JWT (jjwt 0.11.5) |
-| Messaging | Apache Kafka (KRaft mode — no Zookeeper) |
-| ORM | Spring Data JPA, Hibernate |
+| Security | Spring Security + JWT (jjwt 0.11.5) |
+| Messaging | Apache Kafka (KRaft mode) |
+| ORM | Spring Data JPA + Hibernate |
 | Database | MySQL 8.0 |
-| Email | JavaMail (SMTP) + Freemarker templates |
-| Resilience | Resilience4j — retry, circuit breaker, exponential backoff |
+| Email | JavaMail (SMTP) + Freemarker |
+| Resilience | Resilience4j (Retry, Circuit Breaker) |
 | Observability | Spring Boot Actuator |
-| Containerisation | Docker, Docker Compose (multi-stage builds) |
+| Containerization | Docker & Docker Compose |
 | CI/CD | GitHub Actions → AWS EC2 |
 
 ---
 
-## Resilience Pattern
+# 🏗 Microservices
 
-```
-Email dispatch attempt
-        │
-        ▼
-┌───────────────────┐
-│  Circuit Breaker    │ ← Opens after 50% failure rate over 5 requests
-│  (Resilience4j)      │   Waits 10s before retrying
-└────────┬────────────┘
-         │ CLOSED (normal)
-         ▼
-┌───────────────────┐
-│  Retry (max 3)       │ ← Exponential backoff: 2s → 4s → 8s
-│  Resilience4j          │
-└────────┬────────────┘
-         │ All retries failed
-         ▼
-┌───────────────────┐
-│  Dead Letter          │ ← Event published to notifications.dlq
-│  Topic (DLQ)            │   Status updated to FAILED in MySQL
-└───────────────────┘
+## User Service
+
+Responsible for:
+
+- User Registration
+- User Login
+- JWT Token Generation
+- Publishing `UserRegisteredEvent` to Kafka
+
+---
+
+## Order Service
+
+Responsible for:
+
+- Placing Orders
+- Cancelling Orders
+- Fetching Orders by User
+- Publishing `OrderPlacedEvent` and `OrderCancelledEvent` to Kafka
+
+---
+
+## Notification Service
+
+Responsible for:
+
+- Kafka Event Consumption
+- Event Routing
+- Email Dispatch (JavaMail + Freemarker)
+- Retry & Circuit Breaker (Resilience4j)
+- Dead Letter Queue Handling
+- Notification History Persistence
+
+---
+
+# 🚀 Features
+
+## Authentication
+
+- User Registration
+- User Login
+- JWT Authentication
+
+## Order Management
+
+- Place Order
+- Cancel Order
+- View Orders by User
+
+## Notifications
+
+- Event-Driven Email Dispatch
+- Retry with Exponential Backoff
+- Circuit Breaker Protection
+- Dead Letter Queue on Failure
+- Notification History API
+- Unread Count API
+
+---
+
+# 🏛 System Architecture
+
+```mermaid
+graph TD
+
+    Client[Client / Browser]
+
+    UserService[User Service :8081]
+    OrderService[Order Service :8082]
+    NotificationService[Notification Service :8083]
+
+    Kafka[Apache Kafka - KRaft]
+
+    MySQL[(MySQL)]
+
+    Mailtrap[Mailtrap SMTP]
+
+    Client --> UserService
+    Client --> OrderService
+    Client --> NotificationService
+
+    UserService -->|users.events| Kafka
+    OrderService -->|order.placed / order.cancelled| Kafka
+
+    Kafka --> NotificationService
+
+    UserService --> MySQL
+    OrderService --> MySQL
+    NotificationService --> MySQL
+
+    NotificationService --> Mailtrap
 ```
 
 ---
 
-## Database Schema
+# 🔄 Notification Flow
 
-### `notification_db` — `notifications` table
+```mermaid
+sequenceDiagram
 
-| Column | Type | Description |
-|---|---|---|
-| `id` | BIGINT PK | Auto-increment |
-| `user_id` | BIGINT | References user |
-| `email` | VARCHAR | Recipient email |
-| `notification_type` | ENUM | `USER_REGISTERED`, `ORDER_PLACED`, `ORDER_CANCELLED` |
-| `status` | ENUM | `PENDING`, `SENT`, `FAILED`, `SKIPPED` |
-| `payload` | TEXT (JSON) | Full event payload stored for debugging |
-| `retry_count` | INT | 0 to 3 — incremented on each retry |
-| `created_at` | TIMESTAMP | When event was received |
-| `sent_at` | TIMESTAMP | When notification was dispatched |
+participant User
+participant UserService as User Service
+participant Kafka
+participant NotificationService as Notification Service
+participant MySQL
+participant Mailtrap
+
+User->>UserService: Register / Place Order
+
+UserService->>Kafka: Publish Event
+
+Kafka->>NotificationService: Consume Event
+
+NotificationService->>NotificationService: Route Event
+
+NotificationService->>Mailtrap: Send Email (JavaMail)
+
+NotificationService->>MySQL: Persist Notification Status
+```
 
 ---
 
-## Local Setup
+# 🛡️ Resilience Flow
 
-### Prerequisites
+```mermaid
+graph TD
 
-- Docker Desktop running
+    Attempt[Email Dispatch Attempt]
+
+    CB[Circuit Breaker<br/>Opens after 50% failure rate over 5 requests]
+
+    Retry[Retry - max 3<br/>Backoff: 2s to 4s to 8s]
+
+    DLQ[Dead Letter Topic<br/>notifications.dlq<br/>Status: FAILED in MySQL]
+
+    Sent[Status: SENT in MySQL]
+
+    Attempt --> CB
+    CB -->|Closed - normal| Retry
+    Retry -->|Success| Sent
+    Retry -->|All retries failed| DLQ
+```
+
+---
+
+# 📂 Project Structure
+
+```
+Distributed-Notification-Service
+│
+├── User/Service
+│
+├── Order/Service
+│
+├── Notification/Service
+│
+├── docker-compose.yml
+│
+├── init.sql
+│
+└── README.md
+```
+
+---
+
+# 🎯 Design Principles
+
+The project follows several software engineering best practices:
+
+- Event-Driven Architecture
+- Loose Coupling via Kafka (publish-and-forget)
+- Separation of Concerns
+- Layered Architecture
+- Circuit Breaker Pattern
+- Retry Pattern with Exponential Backoff
+- Dead Letter Queue Pattern
+- Repository Pattern
+- DTO Pattern
+
+---
+
+# 🚀 Getting Started
+
+## Prerequisites
+
+Before running the project, ensure you have the following installed:
+
 - Java 21
 - Maven 3.9+
+- Docker Desktop
+- Git
 
-### 1. Clone the repo
+---
+
+## Clone the Repository
 
 ```bash
 git clone https://github.com/userShashwat/MicroSerivce-Kafka.git
+
 cd MicroSerivce-Kafka
 ```
 
-### 2. Set up Mailtrap (free SMTP sandbox)
+---
+
+## Set Up Mailtrap (Free SMTP Sandbox)
 
 Sign up at [mailtrap.io](https://mailtrap.io/) → Email Testing → Inboxes → SMTP Settings → copy your username and password.
 
-### 3. Update environment variables
-
-In `docker-compose.yml`, set your credentials:
+Update `docker-compose.yml`:
 
 ```yaml
 notification-service:
@@ -196,7 +261,11 @@ notification-service:
     MYSQL_ROOT_PASSWORD: your_mysql_password
 ```
 
-### 4. Start all services
+---
+
+## 🐳 Running with Docker
+
+Start all services
 
 ```bash
 docker-compose up --build -d
@@ -210,7 +279,7 @@ This starts 5 containers:
 - `order-service` — port 8082
 - `notification-service` — port 8083
 
-### 5. Verify everything is running
+Verify everything is running
 
 ```bash
 docker ps
@@ -218,11 +287,23 @@ docker ps
 
 All 5 containers should show `Up` and `Healthy`.
 
+Stop all containers
+
+```bash
+docker-compose down
+```
+
+View logs
+
+```bash
+docker-compose logs -f
+```
+
 ---
 
-## Testing the Full Flow
+# 🧪 Testing the Full Flow
 
-### Register a user
+Register a user
 
 ```bash
 curl -X POST http://localhost:8081/api/auth/register \
@@ -230,7 +311,7 @@ curl -X POST http://localhost:8081/api/auth/register \
   -d '{"name": "Shashwat", "email": "test@gmail.com", "password": "password123"}'
 ```
 
-### Place an order
+Place an order
 
 ```bash
 curl -X POST http://localhost:8082/api/orders \
@@ -238,19 +319,19 @@ curl -X POST http://localhost:8082/api/orders \
   -d '{"userId": 1, "product": "MacBook Pro", "quantity": 1, "price": 150000}'
 ```
 
-### Cancel an order
+Cancel an order
 
 ```bash
 curl -X PATCH http://localhost:8082/api/orders/1/cancel
 ```
 
-### Check notification history
+Check notification history
 
 ```bash
 curl http://localhost:8083/api/notifications/user/1
 ```
 
-### Check health
+Check health
 
 ```bash
 curl http://localhost:8083/actuator/health
@@ -271,29 +352,55 @@ Expected response:
 
 ---
 
-## CI/CD Pipeline
+# 📚 API Reference
+
+| Service | Endpoint | Method | Description |
+|---------|----------|--------|-------------|
+| User | `/api/auth/register` | POST | Register new user |
+| User | `/api/auth/login` | POST | Login and get JWT token |
+| Order | `/api/orders` | POST | Place a new order |
+| Order | `/api/orders/{id}/cancel` | PATCH | Cancel an order |
+| Order | `/api/orders/user/{userId}` | GET | Get orders by user |
+| Notification | `/api/notifications/user/{userId}` | GET | Get notification history |
+| Notification | `/api/notifications/user/{userId}/unread-count` | GET | Get unread count |
+| Notification | `/actuator/health` | GET | Health check (DB, Mail, Kafka) |
+| Notification | `/actuator/metrics` | GET | Service metrics |
+
+---
+
+# 🗄 Database Schema
+
+**`notification_db` — `notifications` table**
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | BIGINT PK | Auto-increment |
+| `user_id` | BIGINT | References user |
+| `email` | VARCHAR | Recipient email |
+| `notification_type` | ENUM | `USER_REGISTERED`, `ORDER_PLACED`, `ORDER_CANCELLED` |
+| `status` | ENUM | `PENDING`, `SENT`, `FAILED`, `SKIPPED` |
+| `payload` | TEXT (JSON) | Full event payload stored for debugging |
+| `retry_count` | INT | 0 to 3 — incremented on each retry |
+| `created_at` | TIMESTAMP | When event was received |
+| `sent_at` | TIMESTAMP | When notification was dispatched |
+
+---
+
+# 🔧 CI/CD Pipeline
 
 Every push to `main` triggers the GitHub Actions pipeline:
 
-```
-Push to main
-     │
-     ▼
-Build JAR (mvn package)              ← runs on GitHub Actions runner
-     │
-     ▼
-Copy JARs + Dockerfiles to EC2       ← SCP to EC2
-     │
-     ▼
-docker-compose up --build            ← SSH into EC2, restart all containers
-     │
-     ▼
-All 5 containers live on AWS EC2     ← zero manual steps
+```mermaid
+graph TD
+    A[Push to main] --> B[Build JAR - mvn package]
+    B --> C[Copy JARs and Dockerfiles to EC2 via SCP]
+    C --> D[SSH into EC2 - docker-compose up --build]
+    D --> E[All 5 containers live on AWS EC2]
 ```
 
 ---
 
-## Design Decisions
+# 💡 Design Decisions
 
 **Why Kafka instead of REST calls between services?**
 REST calls create tight coupling — if Notification Service is down, User Service registration fails. With Kafka, User Service publishes the event and forgets. Notification Service picks it up whenever it's ready. No data loss, no coupling.
@@ -309,45 +416,16 @@ Manual retry logic is error-prone and hard to test. Resilience4j provides annota
 
 ---
 
-## Project Structure
+# 👨‍💻 Author
 
-```
-MicroSerivce-Kafka/
-├── User/Service/
-│   └── src/main/java/com/user/Service/
-│       ├── controller/   AuthController.java
-│       ├── dto/          RegisterRequest, LoginRequest, AuthResponse
-│       ├── entity/       User.java
-│       ├── event/        UserRegisteredEvent.java
-│       ├── kafka/        UserEventProducer.java
-│       ├── repository/   UserRepository.java
-│       ├── security/     JwtUtil, JwtAuthFilter, SecurityConfig
-│       └── service/      UserService.java
-├── Order/Service/
-│   └── src/main/java/com/order/Service/
-│       ├── controller/   OrderController.java
-│       ├── dto/          OrderRequest.java
-│       ├── entity/       Order.java
-│       ├── event/        OrderPlaceEvent, OrderCancelledEvent
-│       ├── kafka/        OrderEventProducer.java
-│       ├── repository/   OrderRepository.java
-│       └── service/      OrderService.java
-├── Notification/Service/
-│   └── src/main/java/com/notification/Service/
-│       ├── config/       KafkaConsumerConfig.java
-│       ├── controller/   NotificationController.java
-│       ├── entity/       Notification.java
-│       ├── event/        UserRegisteredEvent, OrderPlacedEvent, OrderCancelledEvent
-│       ├── kafka/        NotificationConsumer.java
-│       ├── repository/   NotificationRepository.java
-│       └── service/      EmailService, NotificationService
-├── docker-compose.yml
-└── init.sql
-```
+**Shashwat Sharma**
+
+B.Tech CSE — KIIT University, Bhubaneswar (2023–2027)
+
+Passionate about Backend Development, Microservices, and Distributed Systems.
 
 ---
 
-## Author
+# ⭐ Support
 
-**Shashwat Sharma**
-B.Tech CSE — KIIT University, Bhubaneswar (2023–2027)
+If you found this project useful, consider giving it a ⭐ on GitHub.
